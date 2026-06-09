@@ -14,6 +14,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:-apple-system,Blink
 #q:focus{border-color:#3c8bff}
 #btn{padding:9px 16px;background:#FEE500;border:none;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s}
 #btn:active{background:#e6ce00}
+#btn:disabled{background:#ccc;cursor:not-allowed}
 #list{background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.15);overflow-y:auto;max-height:220px;display:none}
 .item{padding:11px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background .12s}
 .item:last-child{border-bottom:none}
@@ -45,7 +46,10 @@ const CONFIG = {
   MAX_RESULTS: 5,
 };
 
-let map, infowindow, markers = [];
+let map = null;
+let infowindow = null;
+let markers = [];
+let mapReady = false;
 
 function initMap() {
   map = new kakao.maps.Map(document.getElementById('map'), {
@@ -54,6 +58,7 @@ function initMap() {
   });
   infowindow = new kakao.maps.InfoWindow({ zIndex: 1 });
   map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+  mapReady = true;
 }
 
 async function fetchPlaces(keyword) {
@@ -69,7 +74,7 @@ async function fetchPlaces(keyword) {
 function clearMarkers() {
   markers.forEach(m => m.setMap(null));
   markers = [];
-  infowindow.close();
+  if (infowindow) infowindow.close();
 }
 
 function createMarker(place) {
@@ -82,7 +87,6 @@ function createMarker(place) {
   markers.push(marker);
   return marker;
 }
-
 
 function renderList(places) {
   const list = document.getElementById('list');
@@ -117,8 +121,8 @@ function renderList(places) {
   map.setBounds(bounds, 50);
 }
 
-
 async function search() {
+  if (!mapReady) { showToast('지도 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
   const keyword = document.getElementById('q').value.trim();
   if (!keyword) return;
 
@@ -136,7 +140,6 @@ async function search() {
   }
 }
 
-
 let toastTimer;
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -146,16 +149,14 @@ function showToast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-
 document.getElementById('btn').addEventListener('click', search);
 document.getElementById('q').addEventListener('keydown', e => e.key === 'Enter' && search());
 document.addEventListener('click', e => {
   if (!e.target.closest('#panel')) {
     document.getElementById('list').style.display = 'none';
-    infowindow?.close();
+    if (infowindow) infowindow.close();
   }
 });
-
 
 window.AppInventor = {
   setWebViewString(str) {
@@ -164,7 +165,6 @@ window.AppInventor = {
     search();
   },
 };
-
 
 (function loadSDK() {
   const s = document.createElement('script');
