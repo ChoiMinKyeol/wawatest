@@ -12,14 +12,12 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:-apple-system,Blink
 #search-wrap{display:flex;gap:6px;background:#fff;border-radius:10px;padding:8px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
 #q{flex:1;border:1px solid #e0e0e0;border-radius:7px;padding:9px 12px;font-size:14px;outline:none;transition:border-color .2s}
 #q:focus{border-color:#3c8bff}
-#btn{padding:9px 16px;background:#FEE500;border:none;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s}
-#btn:active{background:#e6ce00}
+#btn{padding:9px 16px;background:#FEE500;border:none;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
 #btn:disabled{background:#ccc;cursor:not-allowed}
 #list{background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.15);overflow-y:auto;max-height:220px;display:none}
-.item{padding:11px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background .12s}
+.item{padding:11px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer}
 .item:last-child{border-bottom:none}
 .item:hover{background:#f7f7f7}
-.item:active{background:#eee}
 .name{font-weight:600;color:#111;line-height:1.3}
 .addr{font-size:12px;color:#888;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{padding:16px;text-align:center;color:#aaa;font-size:13px}
@@ -39,68 +37,49 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:-apple-system,Blink
 <div id="toast"></div>
 
 <script>
-const CONFIG = {
-  JS_KEY:   '531866980f6a3f9242214ddcbbe95f75',
-  REST_KEY: '3374bff45639772b3520c1535404d298',
-  DEFAULT:  { lat: 37.5665, lng: 126.9780, level: 5 },
-  MAX_RESULTS: 5,
-};
+const JS_KEY = '531866980f6a3f9242214ddcbbe95f75';
 
-let map = null;
-let infowindow = null;
-let markers = [];
-let mapReady = false;
+let map, ps, infowindow, markers = [];
 
 function initMap() {
   map = new kakao.maps.Map(document.getElementById('map'), {
-    center: new kakao.maps.LatLng(CONFIG.DEFAULT.lat, CONFIG.DEFAULT.lng),
-    level: CONFIG.DEFAULT.level,
+    center: new kakao.maps.LatLng(37.5665, 126.9780),
+    level: 5,
   });
-  infowindow = new kakao.maps.InfoWindow({ zIndex: 1 });
   map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
-  mapReady = true;
+  ps = new kakao.maps.services.Places();
+  infowindow = new kakao.maps.InfoWindow({ zIndex: 1 });
 }
 
-async function fetchPlaces(keyword) {
-  const url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(keyword)}&size=${CONFIG.MAX_RESULTS}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `KakaoAK ${CONFIG.REST_KEY}` },
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!res.ok) throw new Error(res.status);
-  return res.json();
+function search() {
+  const keyword = document.getElementById('q').value.trim();
+  if (!keyword) return;
+  if (!ps) { showToast('지도 로딩 중입니다'); return; }
+  clearMarkers();
+  document.getElementById('list').style.display = 'none';
+  ps.keywordSearch(keyword, handleResult);
 }
 
-function clearMarkers() {
-  markers.forEach(m => m.setMap(null));
-  markers = [];
-  if (infowindow) infowindow.close();
-}
-
-function createMarker(place) {
-  const pos = new kakao.maps.LatLng(place.y, place.x);
-  const marker = new kakao.maps.Marker({ map, position: pos });
-  kakao.maps.event.addListener(marker, 'click', () => {
-    infowindow.setContent(`<div style="padding:6px 10px;font-size:13px;font-weight:600;max-width:180px">${place.place_name}</div>`);
-    infowindow.open(map, marker);
-  });
-  markers.push(marker);
-  return marker;
+function handleResult(data, status) {
+  if (status === kakao.maps.services.Status.OK) {
+    renderList(data);
+  } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+    const list = document.getElementById('list');
+    list.innerHTML = '<div class="empty">검색 결과가 없습니다</div>';
+    list.style.display = 'block';
+  } else {
+    showToast('검색 중 오류가 발생했습니다');
+  }
 }
 
 function renderList(places) {
   const list = document.getElementById('list');
-  if (!places.length) {
-    list.innerHTML = `<div class="empty">검색 결과가 없습니다</div>`;
-    list.style.display = 'block';
-    return;
-  }
   const bounds = new kakao.maps.LatLngBounds();
   const frag = document.createDocumentFragment();
 
   places.forEach((p, i) => {
     const latlng = new kakao.maps.LatLng(p.y, p.x);
-    createMarker(p);
+    createMarker(p, i);
     bounds.extend(latlng);
 
     const el = document.createElement('div');
@@ -109,7 +88,7 @@ function renderList(places) {
     el.addEventListener('click', () => {
       map.setCenter(latlng);
       map.setLevel(3);
-      markers[i] && kakao.maps.event.trigger(markers[i], 'click');
+      kakao.maps.event.trigger(markers[i], 'click');
       list.style.display = 'none';
     });
     frag.appendChild(el);
@@ -121,23 +100,20 @@ function renderList(places) {
   map.setBounds(bounds, 50);
 }
 
-async function search() {
-  if (!mapReady) { showToast('지도 로딩 중입니다. 잠시 후 다시 시도해주세요.'); return; }
-  const keyword = document.getElementById('q').value.trim();
-  if (!keyword) return;
+function createMarker(place, idx) {
+  const pos = new kakao.maps.LatLng(place.y, place.x);
+  const marker = new kakao.maps.Marker({ map, position: pos });
+  kakao.maps.event.addListener(marker, 'click', () => {
+    infowindow.setContent(`<div style="padding:6px 10px;font-size:13px;font-weight:600;max-width:180px">${place.place_name}</div>`);
+    infowindow.open(map, marker);
+  });
+  markers.push(marker);
+}
 
-  clearMarkers();
-  document.getElementById('list').style.display = 'none';
-  document.getElementById('btn').disabled = true;
-
-  try {
-    const data = await fetchPlaces(keyword);
-    renderList(data.documents);
-  } catch (e) {
-    showToast('검색 중 오류가 발생했습니다');
-  } finally {
-    document.getElementById('btn').disabled = false;
-  }
+function clearMarkers() {
+  markers.forEach(m => m.setMap(null));
+  markers = [];
+  if (infowindow) infowindow.close();
 }
 
 let toastTimer;
@@ -168,7 +144,7 @@ window.AppInventor = {
 
 (function loadSDK() {
   const s = document.createElement('script');
-  s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.JS_KEY}&autoload=false`;
+  s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${JS_KEY}&libraries=services&autoload=false`;
   s.onload = () => kakao.maps.load(initMap);
   s.onerror = () => showToast('지도 SDK 로드 실패');
   document.head.appendChild(s);
